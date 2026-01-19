@@ -6,6 +6,13 @@ import googlemaps
 from geopy.distance import geodesic
 from jinja2 import Template
 from pypdf import PdfWriter
+from dotenv import load_dotenv
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# Load environment variables from parent directory
+parent_dir = os.path.dirname(SCRIPT_DIR)
+load_dotenv(os.path.join(parent_dir, '.env'))
 
 # --- WINDOWS GTK PATCH ---
 MSYS2_BIN_PATH = r'D:\msys2\ucrt64\bin' 
@@ -24,7 +31,7 @@ except (OSError, ImportError) as e:
     sys.exit(1)
 
 # --- CONFIGURATION ---
-GOOGLE_API_KEY = 'AIzaSyBbxRwSS-QiRnwMg5Nu3ohjDdEEh7eAkdc' # Your API Key is here!
+GOOGLE_API_KEY = os.getenv('GOOGLE_API_KEY', '')
 CLIENT_CSV = 'Clientlist1-25.csv'
 SOLD_CSV = 'Justsoldtest2-5.csv'
 OUTPUT_DIR = 'output'

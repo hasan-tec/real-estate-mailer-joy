@@ -16,9 +16,13 @@ from jinja2 import Template
 from pypdf import PdfWriter
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, scrolledtext
+from dotenv import load_dotenv
 
 # --- GET SCRIPT DIRECTORY ---
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# --- LOAD ENVIRONMENT VARIABLES ---
+load_dotenv(os.path.join(SCRIPT_DIR, '.env'))
 
 # --- WINDOWS GTK PATCH ---
 MSYS2_BIN_PATH = r'D:\msys2\ucrt64\bin'
@@ -36,7 +40,7 @@ except (OSError, ImportError) as e:
     sys.exit(1)
 
 # --- CONFIGURATION ---
-DEFAULT_MAPBOX_TOKEN = 'pk.eyJ1IjoiaGFzYW5hbmFzIiwiYSI6ImNta2wyajVkaTAwMmszZXIxaWczMmRsYjAifQ._-D6cOa84DMgXyU0a9JPaQ'
+DEFAULT_MAPBOX_TOKEN = os.getenv('MAPBOX_TOKEN', '')
 OUTPUT_DIR = os.path.join(SCRIPT_DIR, 'output')
 INDIVIDUAL_DIR = os.path.join(OUTPUT_DIR, 'individual')
 MAP_DEBUG_DIR = os.path.join(OUTPUT_DIR, 'debug_maps')
