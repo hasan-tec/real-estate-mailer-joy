@@ -1,0 +1,229 @@
+import pandas as pd
+import os
+import sys
+import time
+import json
+from geopy.distance import geodesic
+from geopy.geocoders import Nominatim
+from jinja2 import Template
+from pypdf import PdfWriter
+
+# --- WINDOWS GTK PATCH ---
+MSYS2_BIN_PATH = r'D:\msys2\ucrt64\bin' 
+
+if sys.platform == 'win32' and os.path.exists(MSYS2_BIN_PATH):
+    os.add_dll_directory(MSYS2_BIN_PATH)
+
+# --- SYSTEM CHECK: WEASYPRINT ---
+try:
+    from weasyprint import HTML
+except (OSError, ImportError) as e:
+    print("\n" + "="*60)
+    print("ERROR: WEASYPRINT / GTK DEPENDENCIES MISSING")
+    print("="*60)
+    print(f"Details: {e}")
+    sys.exit(1)
+
+# --- CONFIGURATION ---
+CLIENT_CSV = 'Clientlist1-25.csv'
+SOLD_CSV = 'Justsoldtest2-5.csv'
+OUTPUT_DIR = 'output'
+CACHE_FILE = 'geocoding_cache.json'
+FINAL_PDF = 'final_mailers_batch.pdf'
+SKIPPED_REPORT = 'skipped_addresses.csv'
+
+# BATCH CONTROL: Set this to a number (e.g., 10) to only process the first X clients.
+# Set to None to process every single row in the CSV.
+MAX_CLIENTS = 10 
+
+# Initialize Free Geocoder
+geolocator = Nominatim(user_agent="real_estate_mailer_audit_v5")
+
+# Tracking lists for logging
+skipped_log = []
+
+# Create output directories
+if not os.path.exists(OUTPUT_DIR):
+    os.makedirs(OUTPUT_DIR)
+if not os.path.exists(f"{OUTPUT_DIR}/individual"):
+    os.makedirs(f"{OUTPUT_DIR}/individual")
+
+# --- CACHE HELPERS ---
+def load_cache():
+    if os.path.exists(CACHE_FILE):
+        with open(CACHE_FILE, 'r') as f:
+            return json.load(f)
+    return {}
+
+def save_cache(cache):
+    with open(CACHE_FILE, 'w') as f:
+        json.dump(cache, f)
+
+# --- STEP 1: LOAD & CLEAN DATA ---
+print("\n[1/6] Loading CSV data...")
+try:
+    df_clients = pd.read_csv(CLIENT_CSV)
+    df_sold = pd.read_csv(SOLD_CSV)
+    
+    # Apply Batch Limit if set
+    if MAX_CLIENTS:
+        print(f"      INFO: Batch Limit enabled. Processing first {MAX_CLIENTS} clients only.")
+        df_clients = df_clients.head(MAX_CLIENTS)
+        
+    print(f"      Success: Loaded {len(df_clients)} clients and {len(df_sold)} sales records.")
+except Exception as e:
+    print(f"      CRITICAL ERROR: {e}")
+    sys.exit(1)
+
+# --- STEP 2: CACHED GEOCODING WITH PROGRESS BAR ---
+cache = load_cache()
+
+def get_coords_with_audit(row, index, total, list_type="Client"):
+    address = row['Address']
+    city = row.get('City', 'Bakersfield')
+    zip_code = row.get('ZIP', '')
+    full_address = f"{address}, {city}, CA {zip_code}"
+    
+    # Progress Bar Logic
+    sys.stdout.write(f"\r      -> Geocoding {list_type} Progress: {index + 1}/{total} addresses...")
+    sys.stdout.flush()
+
+    if full_address in cache:
+        return cache[full_address]
+    
+    try:
+        time.sleep(1.1) # Mandatory delay for Nominatim free tier
+        location = geolocator.geocode(full_address)
+        if location:
+            coords = [location.latitude, location.longitude]
+            cache[full_address] = coords
+            # Frequent cache saving to protect data
+            if len(cache) % 5 == 0:
+                save_cache(cache)
+            return coords
+        else:
+            skipped_log.append({
+                'Address': address, 'Reason': 'Geocoding Failed', 'Type': list_type, 'Row': index + 2
+            })
+    except Exception as e:
+        skipped_log.append({
+            'Address': address, 'Reason': f'API Error: {str(e)}', 'Type': list_type, 'Row': index + 2
+        })
+    return None
+
+print(f"\n[2/6] Geocoding properties (Total: {len(df_clients) + len(df_sold)})...")
+print("      Clients:")
+coords_clients = []
+for i, row in df_clients.iterrows():
+    coords_clients.append(get_coords_with_audit(row, i, len(df_clients), "Client"))
+df_clients['coords'] = coords_clients
+save_cache(cache)
+print(f"\n      Found {df_clients['coords'].notnull().sum()} valid locations.")
+
+print("      Sold Properties:")
+coords_sold = []
+for i, row in df_sold.iterrows():
+    coords_sold.append(get_coords_with_audit(row, i, len(df_sold), "Sold"))
+df_sold['coords'] = coords_sold
+save_cache(cache)
+print(f"\n      Found {df_sold['coords'].notnull().sum()} valid locations.")
+
+# Filter out failures
+valid_clients = df_clients.dropna(subset=['coords']).copy()
+valid_sold = df_sold.dropna(subset=['coords']).copy()
+
+# --- STEP 3: DISTANCE LOGIC ---
+def find_nearest_sold(client_coords, sold_df, n=3):
+    sold_pool = sold_df.copy()
+    sold_pool['distance'] = sold_pool['coords'].apply(lambda x: geodesic(client_coords, x).miles)
+    return sold_pool.sort_values('distance').head(n).to_dict('records')
+
+# --- STEP 4: HTML TEMPLATE ---
+html_template_str = """
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        @page { size: 6in 4in; margin: 0; }
+        body { font-family: 'Helvetica', 'Arial', sans-serif; margin: 0; padding: 20px; color: #333; }
+        .postcard { width: 100%; height: 100%; position: relative; box-sizing: border-box; }
+        .header { color: #2c3e50; border-bottom: 2px solid #2c3e50; margin-bottom: 10px; }
+        .map-box { width: 220px; height: 180px; background: #eee; float: right; margin-left: 15px; border: 1px solid #ccc; }
+        .sold-list { font-size: 11px; margin-top: 10px; }
+        .sold-item { margin-bottom: 5px; padding: 5px; background: #fdfdfd; border-left: 3px solid #e74c3c; border-bottom: 1px solid #eee; }
+        .footer { position: absolute; bottom: 0; font-size: 9px; color: #95a5a6; width: 100%; border-top: 1px solid #eee; padding-top: 5px; }
+    </style>
+</head>
+<body>
+    <div class="postcard">
+        <div class="header">
+            <h2 style="margin:0; font-size: 20px;">Market Update for Your Area</h2>
+        </div>
+        <div class="map-box">
+            <img src="{{ map_url }}" style="width:100%; height:100%; object-fit: cover;">
+        </div>
+        <div class="content" style="width: 280px;">
+            <p style="margin-top:0;">Hi <strong>{{ first_name }}</strong>,</p>
+            <p style="font-size: 11px; line-height: 1.4;">Homes near <strong>{{ address }}</strong> are selling fast. Here are 3 recently sold neighbors:</p>
+            <div class="sold-list">
+                {% for property in nearby %}
+                <div class="sold-item">
+                    <strong>{{ property.Address }}</strong><br>
+                    Sold: ${{ "{:,.0f}".format(property['Purchase Amt']) }} | Dist: {{ "{:.2f}".format(property.distance) }} miles
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        <div class="footer">
+            Neighborhood transaction data prepared for {{ first_name }} {{ last_name }}.
+        </div>
+    </div>
+</body>
+</html>
+"""
+template = Template(html_template_str)
+
+# --- STEP 5: BATCH GENERATION ---
+print(f"\n[3/6] Rendering {len(valid_clients)} Mailers...")
+pdf_files = []
+
+for index, client in valid_clients.iterrows():
+    nearby_homes = find_nearest_sold(client['coords'], valid_sold, n=3)
+    
+    lat, lon = client['coords']
+    map_url = f"https://static-maps.yandex.ru/1.x/?lang=en_US&ll={lon},{lat}&z=15&l=map&size=220,180&pt={lon},{lat},pm2rdm"
+    
+    html_out = template.render(
+        first_name=client['Primary First'],
+        last_name=client['Primary Last'],
+        address=client['Address'],
+        nearby=nearby_homes,
+        map_url=map_url
+    )
+    
+    file_path = f"{OUTPUT_DIR}/individual/mailer_{index}.pdf"
+    try:
+        HTML(string=html_out).write_pdf(file_path)
+        pdf_files.append(file_path)
+        if (len(pdf_files)) % 5 == 0:
+            sys.stdout.write(f"\r      -> Created {len(pdf_files)}/{len(valid_clients)} PDFs...")
+            sys.stdout.flush()
+    except Exception as e:
+        skipped_log.append({'Address': client['Address'], 'Reason': f'PDF Render Error: {str(e)}', 'Type': 'Client', 'Row': index + 2})
+
+# --- STEP 6: MERGE & AUDIT REPORT ---
+print("\n\n[4/6] Finalizing Output...")
+if pdf_files:
+    merger = PdfWriter()
+    for pdf in pdf_files:
+        merger.append(pdf)
+    with open(f"{OUTPUT_DIR}/{FINAL_PDF}", "wb") as f:
+        merger.write(f)
+    print(f"      Success: Generated {FINAL_PDF} ({len(pdf_files)} pages).")
+
+if skipped_log:
+    df_skipped = pd.DataFrame(skipped_log)
+    df_skipped.to_csv(f"{OUTPUT_DIR}/{SKIPPED_REPORT}", index=False)
+    print(f"      Audit: {len(skipped_log)} addresses skipped. See {SKIPPED_REPORT}")
+
+print(f"\n[6/6] Done! Files located in: {os.path.abspath(OUTPUT_DIR)}\n")
