@@ -134,15 +134,15 @@ html_template_str = """
         }
         
         .panel-address {
-            height: 3.5in;
+            height: 3.75in;
         }
         
         .panel-content {
-            height: 4.2in;
+            height: 3.65in;
         }
         
         .panel-bottom {
-            height: 3.3in;
+            height: 3.6in;
         }
         
         /* ============================================
@@ -171,13 +171,31 @@ html_template_str = """
         }
         
         /* Address box - positioned for #10 window envelope */
-        /* Window typically: 4.5" x 1.125", positioned ~0.875" from left, ~0.5" from bottom of panel */
+        /* Window starts at 2 9/16" (2.56") from top, 7/8" (0.875") from left */
         .address-container {
-            margin-top: 0.4in;
-            margin-left: 0.5in;
+            margin-top: 1.8in;
+            margin-left: 0.875in;
             width: 4in;
-            height: 1.2in;
+            height: 1in;
             padding: 10px 15px;
+        }
+        
+        /* Right side image next to address */
+        .right-side-image {
+            position: absolute;
+            top: 1.8in;
+            right: 0.4in;
+            width: 1.1in;
+            height: 1.1in;
+            border-radius: 6px;
+            overflow: hidden;
+            border: 2px solid #D4AF37;
+        }
+        
+        .right-side-image img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
         }
         
         .address-line {
@@ -217,7 +235,7 @@ html_template_str = """
         /* Top banner upload area */
         .top-banner {
             width: 100%;
-            height: 1.1in;
+            height: 0.75in;
             background: #f5f5f5;
             border: 2px dashed #D4AF37;
             border-radius: 6px;
@@ -245,10 +263,11 @@ html_template_str = """
             display: flex;
             gap: 0.15in;
             flex: 1;
+            max-height: 2.6in;
         }
         
         .map-section {
-            width: 3.5in;
+            width: 3.2in;
             display: flex;
             flex-direction: column;
         }
@@ -399,17 +418,17 @@ html_template_str = """
     <div class="panel panel-address">
         <div class="mini-header">GEBARAH REAL ESTATE GROUP</div>
         
-        <div class="return-address">
-            Joy Gebarah<br>
-            Gebarah Real Estate Group<br>
-            Bakersfield, CA
-        </div>
-        
         <div class="address-container">
             <div class="address-line address-name">{{ first_name }} {{ last_name }}</div>
             <div class="address-line">{{ address }}</div>
             <div class="address-line">{{ city }}, CA {{ zip_code }}</div>
         </div>
+        
+        {% if right_side_img %}
+        <div class="right-side-image">
+            <img src="{{ right_side_img }}" alt="Right Side Image">
+        </div>
+        {% endif %}
     </div>
     
     <!-- ==========================================
@@ -476,15 +495,6 @@ html_template_str = """
             [Bottom Banner - Upload your custom Canva design / Call-to-Action]
         </div>
         {% endif %}
-        
-        <div class="mini-footer">
-            <div>
-                <span class="agent-name">Joy Gebarah</span> | Gebarah Real Estate Group
-            </div>
-            <div class="contact-info">
-                📞 Licensed Professional &nbsp;|&nbsp; ⭐ 5.0 Rating &nbsp;|&nbsp; 🏆 Bakersfield Specialist
-            </div>
-        </div>
     </div>
 </body>
 </html>
@@ -503,6 +513,7 @@ class MailerGeneratorApp:
         self.sold_csv_path = tk.StringVar()
         self.top_banner_path = tk.StringVar()
         self.bottom_banner_path = tk.StringVar()
+        self.right_side_image_path = tk.StringVar()
         self.num_nearby = tk.IntVar(value=3)
         self.num_clients = tk.StringVar(value="all")
         self.mapbox_token = tk.StringVar(value=DEFAULT_MAPBOX_TOKEN)
@@ -558,11 +569,17 @@ class MailerGeneratorApp:
         ttk.Button(banner_frame, text="Browse", command=self.browse_bottom_banner).grid(row=1, column=2)
         ttk.Button(banner_frame, text="Clear", command=lambda: self.bottom_banner_path.set("")).grid(row=1, column=3, padx=5)
         
+        # Right Side Image
+        ttk.Label(banner_frame, text="Right Side Image:").grid(row=2, column=0, sticky=tk.W, pady=5)
+        ttk.Entry(banner_frame, textvariable=self.right_side_image_path, width=50).grid(row=2, column=1, padx=5)
+        ttk.Button(banner_frame, text="Browse", command=self.browse_right_side_image).grid(row=2, column=2)
+        ttk.Button(banner_frame, text="Clear", command=lambda: self.right_side_image_path.set("")).grid(row=2, column=3, padx=5)
+        
         # Banner tips
         tip_label = ttk.Label(banner_frame, 
-                              text="💡 Tip: Create banners at 8\" x 1\" (top) and 8\" x 3\" (bottom) for best results",
+                              text="💡 Tip: Create banners at 8\" x 1\" (top) and 8\" x 3\" (bottom) for best results. Right side image: square format recommended.",
                               font=('Segoe UI', 9), foreground='#666')
-        tip_label.grid(row=2, column=0, columnspan=4, pady=(5, 0), sticky=tk.W)
+        tip_label.grid(row=3, column=0, columnspan=4, pady=(5, 0), sticky=tk.W)
         
         # --- API Key Frame ---
         api_frame = ttk.LabelFrame(main_frame, text="🔑 Mapbox API Token", padding="10")
@@ -718,6 +735,16 @@ class MailerGeneratorApp:
             self.bottom_banner_path.set(path)
             self.log(f"Selected bottom banner: {os.path.basename(path)}", 'SUCCESS')
     
+    def browse_right_side_image(self):
+        path = filedialog.askopenfilename(
+            title="Select Right Side Image",
+            initialdir=SCRIPT_DIR,
+            filetypes=[("Image files", "*.png *.jpg *.jpeg *.gif *.webp"), ("All files", "*.*")]
+        )
+        if path:
+            self.right_side_image_path.set(path)
+            self.log(f"Selected right side image: {os.path.basename(path)}", 'SUCCESS')
+    
     def open_output_folder(self):
         ensure_directories()
         if sys.platform == 'win32':
@@ -821,6 +848,7 @@ class MailerGeneratorApp:
             # --- Load banner images ---
             top_banner_img = None
             bottom_banner_img = None
+            right_side_img = None
             
             if self.top_banner_path.get() and os.path.exists(self.top_banner_path.get()):
                 top_banner_img = image_to_base64(self.top_banner_path.get())
@@ -833,6 +861,12 @@ class MailerGeneratorApp:
                 self.log(f"  Loaded bottom banner: {os.path.basename(self.bottom_banner_path.get())}", 'SUCCESS')
             else:
                 self.log("  No bottom banner selected (will show placeholder)", 'WARNING')
+            
+            if self.right_side_image_path.get() and os.path.exists(self.right_side_image_path.get()):
+                right_side_img = image_to_base64(self.right_side_image_path.get())
+                self.log(f"  Loaded right side image: {os.path.basename(self.right_side_image_path.get())}", 'SUCCESS')
+            else:
+                self.log("  No right side image selected", 'WARNING')
             
             # --- STEP 1: Load Data ---
             self.update_status("📥 Loading CSV data...")
@@ -934,7 +968,8 @@ class MailerGeneratorApp:
                     nearby=nearby,
                     map_url=map_url,
                     top_banner_img=top_banner_img,
-                    bottom_banner_img=bottom_banner_img
+                    bottom_banner_img=bottom_banner_img,
+                    right_side_img=right_side_img
                 )
                 
                 # Save map image for verification
