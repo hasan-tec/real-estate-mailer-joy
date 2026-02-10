@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Real Estate Mailer Generator | Gebarah Real Estate</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="logo">
+                <span class="logo-icon">🏠</span>
+                <span class="logo-text">Gebarah Real Estate</span>
+            </div>
+            <h1>Tri-Fold Mailer Generator</h1>
+            <p class="subtitle">8.5" x 11" Letter | #10 Window Envelope Compatible</p>
+        </header>
+        
+        <form id="mailer-form" enctype="multipart/form-data">
+            <!-- CSV Files Section -->
+            <section class="form-section">
+                <h2>📁 CSV Files</h2>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="client_csv">Client List (targets) *</label>
+                        <div class="file-input-wrapper">
+                            <input type="file" id="client_csv" name="client_csv" accept=".csv" required>
+                            <span class="file-label">Choose CSV file...</span>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="sold_csv">Sold Homes List *</label>
+                        <div class="file-input-wrapper">
+                            <input type="file" id="sold_csv" name="sold_csv" accept=".csv" required>
+                            <span class="file-label">Choose CSV file...</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+            
+            <!-- Banner Images Section -->
+            <section class="form-section">
+                <h2>🎨 Custom Banners (Optional)</h2>
+                <p class="section-hint">Tip: Create banners at 8" x 1" (top) and 8" x 3" (bottom) for best results. Right side image: square format recommended.</p>
+                <div class="form-grid form-grid-3">
+                    <div class="form-group">
+                        <label for="top_banner">Top Banner Image</label>
+                        <div class="file-input-wrapper">
+                            <input type="file" id="top_banner" name="top_banner" accept="image/*">
+                            <span class="file-label">Choose image...</span>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="bottom_banner">Bottom Banner Image</label>
+                        <div class="file-input-wrapper">
+                            <input type="file" id="bottom_banner" name="bottom_banner" accept="image/*">
+                            <span class="file-label">Choose image...</span>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="right_side_image">Right Side Image</label>
+                        <div class="file-input-wrapper">
+                            <input type="file" id="right_side_image" name="right_side_image" accept="image/*">
+                            <span class="file-label">Choose image...</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+            
+            <!-- API & Settings Section -->
+            <section class="form-section">
+                <h2>⚙️ Settings</h2>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="mapbox_token">Mapbox API Token *</label>
+                        <div class="password-input">
+                            <input type="password" id="mapbox_token" name="mapbox_token" 
+                                   value="{{ default_mapbox_token }}" required
+                                   placeholder="pk.eyJ1I...">
+                            <button type="button" class="toggle-visibility" onclick="togglePassword()">👁</button>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="num_nearby">Nearby Properties to Show</label>
+                        <select id="num_nearby" name="num_nearby">
+                            <option value="3" selected>3 properties</option>
+                            <option value="4">4 properties</option>
+                            <option value="5">5 properties</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group" style="margin-top: 1rem;">
+                    <label for="num_clients">Clients to Process</label>
+                    <input type="text" id="num_clients" name="num_clients" value="all" 
+                           placeholder="Enter number or 'all'">
+                    <span class="input-hint">Enter a number to limit, or 'all' for everyone</span>
+                </div>
+            </section>
+            
+            <!-- Submit Button -->
+            <div class="submit-section">
+                <button type="submit" id="submit-btn" class="btn-primary">
+                    <span class="btn-text">🚀 Generate Mailers</span>
+                    <span class="btn-loading" style="display: none;">
+                        <span class="spinner"></span>
+                        Submitting...
+                    </span>
+                </button>
+                <p class="submit-hint">Processing happens in the background — you'll see live progress below</p>
+            </div>
+        </form>
+        
+        <!-- ============ PROGRESS PANEL (hidden until job starts) ============ -->
+        <section id="progress-panel" class="form-section progress-panel" style="display: none;">
+            <h2>📊 Progress</h2>
+            <div class="progress-bar-container">
+                <div class="progress-bar" id="progress-bar" style="width: 0%;">0%</div>
+            </div>
+            <p class="progress-message" id="progress-message">Waiting...</p>
+            <div id="progress-detail" class="progress-detail"></div>
+        </section>
+
+        <!-- ============ RESULT PANEL (hidden until done) ============ -->
+        <section id="result-panel" class="form-section result-panel" style="display: none;">
+            <h2>✅ Complete!</h2>
+            <p id="result-summary" class="result-summary"></p>
+            <a id="download-link" href="#" class="btn-primary btn-download">⬇️ Download ZIP</a>
+        </section>
+
+        <!-- Error/Status Display -->
+        <div id="status-message" class="status-message" style="display: none;"></div>
+        
+        <footer>
+            <p>© 2025 Gebarah Real Estate Group. Powered by Mapbox & WeasyPrint.</p>
+        </footer>
+    </div>
+    
+    <script>
+        // ─── File input label updates ─────────────────────────────────────
+        document.querySelectorAll('input[type="file"]').forEach(input => {
+            input.addEventListener('change', function() {
+                const label = this.parentElement.querySelector('.file-label');
+                if (this.files.length > 0) {
+                    label.textContent = this.files[0].name;
+                    label.classList.add('has-file');
+                } else {
+                    label.textContent = this.accept.includes('csv') ? 'Choose CSV file...' : 'Choose image...';
+                    label.classList.remove('has-file');
+                }
+            });
+        });
+        
+        function togglePassword() {
+            const input = document.getElementById('mapbox_token');
+            input.type = input.type === 'password' ? 'text' : 'password';
+        }
+        
+        // ─── State ────────────────────────────────────────────────────────
+        let currentJobId = null;
+        let pollTimer = null;
+
+        // ─── DOM refs ─────────────────────────────────────────────────────
+        const form            = document.getElementById('mailer-form');
+        const submitBtn       = document.getElementById('submit-btn');
+        const btnText         = submitBtn.querySelector('.btn-text');
+        const btnLoading      = submitBtn.querySelector('.btn-loading');
+        const statusMsg       = document.getElementById('status-message');
+        const progressPanel   = document.getElementById('progress-panel');
+        const progressBar     = document.getElementById('progress-bar');
+        const progressMessage = document.getElementById('progress-message');
+        const progressDetail  = document.getElementById('progress-detail');
+        const resultPanel     = document.getElementById('result-panel');
+        const resultSummary   = document.getElementById('result-summary');
+        const downloadLink    = document.getElementById('download-link');
+
+        // ─── Form submit → POST /generate (AJAX, returns job_id) ──────────
+        form.addEventListener('submit', async function(e) {
+            e.preventDefault();
+
+            // Reset UI
+            statusMsg.style.display = 'none';
+            resultPanel.style.display = 'none';
+            progressPanel.style.display = 'none';
+            progressBar.style.width = '0%';
+            progressBar.textContent = '0%';
+            progressMessage.textContent = 'Uploading files...';
+            progressDetail.textContent = '';
+
+            // Disable button
+            btnText.style.display = 'none';
+            btnLoading.style.display = 'inline-flex';
+            submitBtn.disabled = true;
+
+            try {
+                const formData = new FormData(form);
+                const res = await fetch('/generate', { method: 'POST', body: formData });
+                const data = await res.json();
+
+                if (!res.ok) {
+                    throw new Error(data.error || 'Server error');
+                }
+
+                currentJobId = data.job_id;
+                progressPanel.style.display = 'block';
+                progressMessage.textContent = 'Job queued — starting...';
+                startPolling();
+
+            } catch (err) {
+                showError(err.message);
+                resetButton();
+            }
+        });
+
+        // ─── Poll /status/<job_id> every 2 seconds ────────────────────────
+        function startPolling() {
+            if (pollTimer) clearInterval(pollTimer);
+            pollTimer = setInterval(pollStatus, 2000);
+            pollStatus(); // immediate first call
+        }
+
+        async function pollStatus() {
+            if (!currentJobId) return;
+            try {
+                const res = await fetch(`/status/${currentJobId}`);
+                const data = await res.json();
+
+                if (!res.ok) {
+                    throw new Error(data.error || 'Status check failed');
+                }
+
+                // Update progress bar
+                const pct = data.total > 0 ? Math.round((data.progress / data.total) * 100) : 0;
+                progressBar.style.width = pct + '%';
+                progressBar.textContent = pct + '%';
+                progressMessage.textContent = data.message || 'Working...';
+                progressDetail.textContent = `Step ${data.progress} / ${data.total}`;
+
+                if (data.status === 'done') {
+                    clearInterval(pollTimer);
+                    pollTimer = null;
+                    progressBar.style.width = '100%';
+                    progressBar.textContent = '100%';
+                    progressMessage.textContent = 'Done! Your mailers are ready.';
+
+                    // Show result panel
+                    resultPanel.style.display = 'block';
+                    let summary = `Generated ${data.pdf_count} tri-fold mailer PDFs (8.5" x 11").`;
+                    if (data.skipped_count > 0) {
+                        summary += ` Skipped ${data.skipped_count} addresses.`;
+                    }
+                    resultSummary.textContent = summary;
+                    downloadLink.href = `/download/${currentJobId}`;
+                    resetButton();
+
+                } else if (data.status === 'failed') {
+                    clearInterval(pollTimer);
+                    pollTimer = null;
+                    showError(data.message || 'Generation failed');
+                    resetButton();
+                }
+
+            } catch (err) {
+                // Network blip — keep polling, don't kill the job
+                console.warn('Poll error:', err);
+            }
+        }
+
+        // ─── Helpers ──────────────────────────────────────────────────────
+        function showError(msg) {
+            statusMsg.textContent = '❌ ' + msg;
+            statusMsg.className = 'status-message error';
+            statusMsg.style.display = 'block';
+        }
+
+        function resetButton() {
+            btnText.style.display = 'inline';
+            btnLoading.style.display = 'none';
+            submitBtn.disabled = false;
+        }
+    </script>
+</body>
+</html>

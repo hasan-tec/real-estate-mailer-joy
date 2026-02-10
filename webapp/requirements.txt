@@ -1,0 +1,10 @@
+flask==3.0.0
+weasyprint>=62.0
+pydyf>=0.11.0
+pandas==2.1.4
+requests==2.31.0
+geopy==2.4.1
+jinja2==3.1.2
+pypdf==3.17.1
+python-dotenv==1.0.0
+gunicorn==21.2.0
